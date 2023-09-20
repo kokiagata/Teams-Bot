@@ -12,40 +12,42 @@ import math
 
 
 def runBots():
-    ticket_url = 'https://zendesk.com/api/v2/search.json?query=type:ticket group_id:${yourZdGroupId}'
-    DATA_LOCATION = "sqlite:///${databaseName}.sqlite"
+    ticket_url = 'https://aais.zendesk.com/api/v2/search.json?query=type:ticket group_id:360008987952'
+    DATA_LOCATION = "sqlite:///escalations.sqlite"
     engine = sqlalchemy.create_engine(DATA_LOCATION)
-    connection = sqlite3.connect('${databaseName}.sqlite')
+    connection = sqlite3.connect('escalations.sqlite')
     cursor = connection.cursor()
-    tableName = ${tableName}
-    myTeamsMessage = pymsteams.connectorcard(${connectorUrl})
-    myTeamsMessageAddition = pymsteams.connectorcard(${connectorUrl})
+    tableName = "escalations_tickets"
+    myTeamsMessage = pymsteams.connectorcard('https://adastra1.webhook.office.com/webhookb2/b94a3828-160c-4911-b427-ec738137737a@735aebe8-b1ad-4100-8c92-6b3384929c66/IncomingWebhook/6334b3e47aa348409daffb5c4a7f3247/f1bea454-709e-4878-8767-1a80d700c4a9')
+    myTeamsMessageAddition = pymsteams.connectorcard('https://adastra1.webhook.office.com/webhookb2/b94a3828-160c-4911-b427-ec738137737a@735aebe8-b1ad-4100-8c92-6b3384929c66/IncomingWebhook/6334b3e47aa348409daffb5c4a7f3247/f1bea454-709e-4878-8767-1a80d700c4a9')
+    #myTeamsMessage = pymsteams.connectorcard('https://adastra1.webhook.office.com/webhookb2/b94a3828-160c-4911-b427-ec738137737a@735aebe8-b1ad-4100-8c92-6b3384929c66/IncomingWebhook/defe5f26d74f4a5fb2f99e310aae7aa5/f1bea454-709e-4878-8767-1a80d700c4a9')
+    #myTeamsMessageAddition = pymsteams.connectorcard('https://adastra1.webhook.office.com/webhookb2/b94a3828-160c-4911-b427-ec738137737a@735aebe8-b1ad-4100-8c92-6b3384929c66/IncomingWebhook/defe5f26d74f4a5fb2f99e310aae7aa5/f1bea454-709e-4878-8767-1a80d700c4a9')
+
     myTeamsMessage.title("Ticket Updates")
     myTeamsMessageAddition.title("Additional Updates!!")
     myMessageSection = pymsteams.cardsection()
-    user = ${userName}
-    pwd = ${password}
+    user = "kagata@aais.com"
+    pwd = "Bchan4lyf!"
     response = requests.get(ticket_url, auth=(user, pwd))
     if response.status_code != 200:
         print('Not connecting to Zendesk')
-   
-  # This function gets the client names
     def getTenantNames(*orgIds):
         org_frame = []
         refine_org_frame = []
         for orgId in orgIds:
-            organization_url = 'https://zendesk.com/api/v2/organizations/{orgId}'.format(orgId = orgId)
+            organization_url = 'https://aais.zendesk.com/api/v2/organizations/{orgId}'.format(orgId = orgId)
             response = requests.get(organization_url, auth=(user, pwd))
-            organizationList = response.json()
-            org_frame.append(organizationList)
+            if response.status_code != 200:
+                print("no org id")
+                org_frame.append({"organization":{"id":0, "name":"no tenant assigned"}})
+            else:
+                organizationList = response.json()
+                org_frame.append(organizationList)
         for item in org_frame:
             refine_org_frame.append(item['organization'])
-        print(refine_org_frame)
+        #org_frame = pd.json_normalize(org_frame)[['id','name']]
         org_dataframe = pd.json_normalize(refine_org_frame)[['id','name']]
-        print(org_dataframe)
         return org_dataframe
-    
-    # This function lists client names
     def listTenantNames(tenantIds):
         tenantNameMapping = []
         for tenant in tenantIds:
@@ -53,27 +55,20 @@ def runBots():
         tenantId = getTenantNames(*tenantNameMapping)['id']
         tenantName = getTenantNames(*tenantNameMapping)['name']
         tenantNameMapping = dict(zip(tenantId, tenantName))
+        print(tenantNameMapping)
         return tenantNameMapping
-    
-    # This function maps client id to corresponding client name
     def idToNames(ids):
         return ids.map(listTenantNames(ids))
-    
-    # This function gets the unix time
     def getUnixTimes(times):
         unixList = []
         for time in times:
             unixList.append(datetime.timestamp(pd.to_datetime(time)))
         return unixList
-    
-    # This function maps the time to corresponding unix time
     def getUnixMapping(a):
         timeList = sorted(a)
         unixes = getUnixTimes(a)
         unix = sorted(unixes)
         return dict(zip(timeList, unix))
-    
-    # This function gets the timezones
     def convertTimeZones(timezones):
         originalTimeZones = []
         newTimeZones = []
@@ -84,21 +79,15 @@ def runBots():
         originalTimeZones = sorted(originalTimeZones)
         newTimeZones = sorted(newTimeZones)
         return dict(zip(originalTimeZones, newTimeZones))
-    
-    # This function maps the proper timezones
     def mapTimeZones(timezones):
         useThisTimezones = timezones.map(convertTimeZones(timezones))
         return useThisTimezones
-    
-    # Get the ticket info
     tickets = response.json()
     dataframe = []
     for ticket in tickets['results']:
         dataframe.append(ticket)
-    
-    # Filter to specific columns
     ticket_frame = pd.json_normalize(dataframe)[['id','group_id','status','created_at','updated_at','subject','description','priority','organization_id','url']]
-    esc_ticket = ticket_frame.query('group_id==${groupId} and (status=="open" or status=="pending" or status=="hold" or status=="new")')
+    esc_ticket = ticket_frame.query('group_id==360008987952 and (status=="open" or status=="pending" or status=="hold" or status=="new")')
     if len(esc_ticket) == 0:
 
         queryUpdatedDate = '''
@@ -118,6 +107,12 @@ def runBots():
             print("There is no active ticket in the queue. Deleting the ticket in dbeaver")
             myTeamsMessage.text("Awesomesauce! 0 ticket in the queue!")
             myTeamsMessage.send()
+            #notification.notify(
+            #        title = 'Escalation-bot',
+            #        message = 'No tickets in the queue',
+            #        app_icon = None,
+            #        timeout = 10
+            #    )
             connection.close()
 
         else: 
@@ -125,6 +120,7 @@ def runBots():
             connection.close()
 
     else:
+        esc_ticket['organization_id'] = esc_ticket['organization_id'].fillna(0)
         esc_ticket['organization_id'] = idToNames(esc_ticket['organization_id'])
         esc_ticket = esc_ticket.rename(columns={"organization_id":"tenant_name"})
         timeMapping = getUnixMapping(esc_ticket['updated_at'])
@@ -151,7 +147,11 @@ def runBots():
         SELECT id, updated_at FROM escalations_tickets
         '''
 
-        ## Run this once to initially set up the database
+        queryToBeDeletedInDbeaver = '''
+        SELECT id, tenant_name from escalations_tickets
+        '''
+
+        ## To initially set up the database
         #esc_ticket.to_sql(tableName, engine, index=False, if_exists='replace')
         #cursor.execute(queryToStore)
         
@@ -159,138 +159,194 @@ def runBots():
         dbeaverObject = dict(list(cursor.fetchall()))
         print(dbeaverObject)
         dbeaverLen = len(dbeaverObject)
-        print(dbeaverLen)
-        # If there are same number of tickets in zendesk and dbeaver, then we check for updated_at values for any updates
-        def checkUpdatedDates(stored):
-            listOfTicketId = []
-            for key in stored:
-                compareTickets = esc_ticket.query('id == @key')
-                listOfTicketId.append(compareTickets['id'].to_string(index=False))
-        # If there are same number of tickets at this point, it means no tickets got transferred or closed then got new tickets
-            if len(listOfTicketId) == dbeaverLen:
-                print("No different tickets")
-                esc_ticket['previous_update'] = esc_ticket['id'].map(stored)
-        # If updated_at values are the same, no update
-                if esc_ticket['updated_at'].equals(esc_ticket['previous_update']):
-                    print("No updates")
-                    connection.close()
+        print("this is  the length of the dbeaverObject", dbeaverLen)
+        ##If dbeaver records were deleted due to no tickets, and new tickets came in, goes through this to recreate the table and update
+        if dbeaverLen == 0:
+            print("re-creating dbeaver table")
+            esc_ticket.to_sql(tableName, engine, index=False, if_exists='replace')
+            cursor.execute(queryToStore)
 
-        # Otherwise, there is some update
+            myTeamsMessage.text("New ticket(s)!")
+            myMessageSection.addFact("Difference: ", len(esc_ticket))
+            for ticket in esc_ticket['id']:
+                url = esc_ticket.query("id == @ticket")['url'].to_string(index=False).replace("/api/v2","").replace(".json","")
+                tenantName = esc_ticket.query("id == @ticket")['tenant_name'].to_string(index=False)
+                myMessageSection.addFact("Links: ", url)
+                myMessageSection.addFact("Tenant Name: ", tenantName)
+            myTeamsMessage.addSection(myMessageSection)
+            myTeamsMessage.send()
+
+        ##If above does not apply, run as usual
+        else:
+            cursor.execute(queryToBeDeletedInDbeaver)
+            dbeaverGoneObj = dict(list(cursor.fetchall()))
+            print(dbeaverGoneObj)
+            ##If there are same number of tickets in zendesk and dbeaver, then we check for updated_at values for any updates
+            def checkUpdatedDates(stored):
+                listOfTicketId = []
+                for key in stored:
+                    compareTickets = esc_ticket.query('id == @key')
+                    listOfTicketId.append(compareTickets['id'].to_string(index=False))
+            ##If there are same number of tickets at this point, it means no tickets got transferred or closed then got new tickets
+                if len(listOfTicketId) == dbeaverLen:
+                    print("No different tickets")
+                    esc_ticket['previous_update'] = esc_ticket['id'].map(stored)
+            ##If updated_at values are the same, no update
+                    if esc_ticket['updated_at'].equals(esc_ticket['previous_update']):
+                        print("No updates")
+
+                        #myTeamsMessage.text("testing")
+                        #myTeamsMessage.send()
+                        connection.close()
+                    #    notification.notify(
+                    #    title = 'Escalation-bot',
+                    #    message = 'No updates detected',
+                    #    app_icon = None,
+                    #    timeout = 10
+                    #)
+            ##Otherwise, there is some update
+                    else:
+                        print("There's some update")
+                        ticketsToCheck = esc_ticket.query("updated_at != previous_update")
+                        for ticketToCheck in ticketsToCheck['id']:
+                            eachTicket = ticketsToCheck.query("id == @ticketToCheck")
+                            print(eachTicket)
+                            updatedTicketLink = eachTicket['url'].to_string(index=False)
+                            refineUpdatedTicketLink = updatedTicketLink.replace("/api/v2","").replace(".json","")
+                            print(refineUpdatedTicketLink)
+                            updatedTicketId = eachTicket['id'].to_string(index=False)
+                            print(updatedTicketId)
+                            tenantName = eachTicket['tenant_name'].to_string(index=False)
+                            print(tenantName)
+                            newUpdate = eachTicket['updated_at'].to_string(index=False)
+                            myMessageSection.addFact("Ticket ID: ", updatedTicketId)
+                            myMessageSection.addFact("Link: ", refineUpdatedTicketLink)
+                            myMessageSection.addFact("Updated at: ", newUpdate)
+                            myMessageSection.addFact("Tenant Name: ", tenantName)
+                        myTeamsMessage.addSection(myMessageSection)
+                        myTeamsMessage.text("Updates were detected")
+                        myTeamsMessage.send()
+                        esc_ticket.to_sql(tableName, engine, index=False, if_exists='replace')
+                        cursor.execute(queryToStore)
+                        connection.close()
+                    #    notification.notify(
+                    #    title = 'Escalation-bot',
+                    #    message = 'There are some updates!',
+                    #    app_icon = None,
+                    #    timeout = 10
+                    #)
+            ##This is when there are same number of tickets, but ids are different
                 else:
-                    print("There's some update")
-                    ticketsToCheck = esc_ticket.query("updated_at != previous_update")
-                    for ticketToCheck in ticketsToCheck['id']:
-                        eachTicket = ticketsToCheck.query("id == @ticketToCheck")
-                        print(eachTicket)
-                        updatedTicketLink = eachTicket['url'].to_string(index=False)
-                        refineUpdatedTicketLink = updatedTicketLink.replace("/api/v2","").replace(".json","")
-                        print(refineUpdatedTicketLink)
-                        updatedTicketId = eachTicket['id'].to_string(index=False)
-                        print(updatedTicketId)
-                        newUpdate = eachTicket['updated_at'].to_string(index=False)
-                        myMessageSection.addFact("Ticket ID: ", updatedTicketId)
-                        myMessageSection.addFact("Link: ", refineUpdatedTicketLink)
-                        myMessageSection.addFact("Updated at: ", newUpdate)
+                    forgottenTicket = esc_ticket.query("id not in @listOfTicketId")
+                    forgottenTicketId = forgottenTicket['id'].to_string(index=False)
+                    forgottenTicketLink = forgottenTicket['url'].to_string(index=False).replace("/api/v2","").replace(".json","")
+                    myMessageSection.addFact("Ticket id: ", forgottenTicketId)
+                    myMessageSection.addFact("Link: ", forgottenTicketLink)
+                    myTeamsMessage.text("There are same number of tickets, but one or more tickets in the queue may be different from previous check")
                     myTeamsMessage.addSection(myMessageSection)
-                    myTeamsMessage.text("Updates were detected")
                     myTeamsMessage.send()
                     esc_ticket.to_sql(tableName, engine, index=False, if_exists='replace')
                     cursor.execute(queryToStore)
                     connection.close()
-
-        # This is when there are same number of tickets, but ids are different
+                    #notification.notify(
+                    #    title = 'Escalation-bot',
+                    #    message = 'There are some updates!',
+                    #    app_icon = None,
+                    #    timeout = 10
+                    #)
+            ##Run this to check for ticket updates even when there are different number of tickets in the queue
+            def checkPureUpdates(stored):
+                listOfTicketId = []
+                for key in stored:
+                    compareTickets = esc_ticket.query("id == @key")
+                    listOfTicketId.append(compareTickets['id'].to_string(index=False))
+                sameTickets = esc_ticket.query("id in @listOfTicketId")
+                sameTickets['previous_update'] = sameTickets['id'].map(stored)
+                if sameTickets['previous_update'].equals(sameTickets['updated_at']):
+                    print("No updates")
+                    esc_ticket.to_sql(tableName, engine, index=False, if_exists='replace')
+                    cursor.execute(queryToStore)
+                    connection.close()
+                    #notification.notify(
+                    #    title = 'Escalation-bot',
+                    #    message = 'Different number of tickets with no updates',
+                    #    app_icon = None,
+                    #    timeout = 10
+                    #)
+                else:
+                    print("There's some update")
+                    ticketsToCheck = sameTickets.query("updated_at != previous_update")
+                    for ticketToCheck in ticketsToCheck['id']:
+                        eachTicket = ticketsToCheck.query("id == @ticketToCheck")
+                        updatedTicketLink = eachTicket['url'].to_string(index=False)
+                        refineUpdatedTicketLink = updatedTicketLink.replace("/api/v2","").replace(".json","")
+                        updatedTicketId = eachTicket['id'].to_string(index=False)
+                        newUpdate = eachTicket['updated_at'].to_string(index=False)
+                        tenantName = eachTicket['tenant_name'].to_string(index=False)
+                        myMessageSection.addFact("Ticket ID: ", updatedTicketId)
+                        myMessageSection.addFact("Link: ", refineUpdatedTicketLink)
+                        myMessageSection.addFact("Updated at: ", newUpdate)
+                        myMessageSection.addFact("Tenant Name: ", tenantName)
+                    myTeamsMessageAddition.addSection(myMessageSection)
+                    myTeamsMessageAddition.text("Additionally, some updates were detected on some tickets")
+                    myTeamsMessageAddition.send()
+                    esc_ticket.to_sql(tableName, engine, index=False, if_exists='replace')
+                    cursor.execute(queryToStore)
+                    connection.close()
+                    #notification.notify(
+                    #    title = 'Escalation-bot',
+                    #    message = 'Different number of tickets AND updates',
+                    #    app_icon = None,
+                    #    timeout = 10
+                    #)
+            if len(esc_ticket) == dbeaverLen:
+                print("Same number of tickets")
+                checkUpdatedDates(dbeaverObject)
+            ##If there are different number of tickets, then update
             else:
-                forgottenTicket = esc_ticket.query("id not in @listOfTicketId")
-                forgottenTicketId = forgottenTicket['id'].to_string(index=False)
-                forgottenTicketLink = forgottenTicket['url'].to_string(index=False).replace("/api/v2","").replace(".json","")
-                myMessageSection.addFact("Ticket id: ", forgottenTicketId)
-                myMessageSection.addFact("Link: ", forgottenTicketLink)
-                myTeamsMessage.text("There are same number of tickets, but one or more tickets in the queue may be different from previous check")
-                myTeamsMessage.addSection(myMessageSection)
-                myTeamsMessage.send()
-                esc_ticket.to_sql(tableName, engine, index=False, if_exists='replace')
-                cursor.execute(queryToStore)
-                connection.close()
+                print("Different number of tickets")
+                if len(esc_ticket) > dbeaverLen:
+                    diffLen = len(esc_ticket) - dbeaverLen
+                    listOfIds = []
+                    for ticketId in dbeaverObject:
+                        listOfIds.append(ticketId)
+                    missingTicket = esc_ticket.query("id not in @listOfIds")
+                    myTeamsMessage.text("There are more tickets in the queue than last we checked!")
+                    myMessageSection.addFact("Difference: ", diffLen)
+                    for ticket in missingTicket['id']:
+                        url = missingTicket.query("id == @ticket")['url'].to_string(index=False).replace("/api/v2","").replace(".json","")
+                        tenantName = missingTicket.query("id == @ticket")['tenant_name'].to_string(index=False)
+                        myMessageSection.addFact("Links: ", url)
+                        myMessageSection.addFact("Tenant Name: ", tenantName)
+                    myTeamsMessage.addSection(myMessageSection)
+                    myTeamsMessage.send()
+            ##check for ticket updates here
+                    checkPureUpdates(dbeaverObject)
+                    print("saved escalation tickets to dbeaver as ", tableName)
+                if dbeaverLen > len(esc_ticket):
+                    diffLen = dbeaverLen - len(esc_ticket)
+                    listOfIdsInZd = []
+                    listOfIdsInDb = []
+                    for ticket in esc_ticket['id']:
+                        listOfIdsInZd.append(ticket)
+                    for id in dbeaverObject:
+                        listOfIdsInDb.append(id)
+                    goneId = list(set(listOfIdsInDb).difference(listOfIdsInZd))
+                    print(goneId)
+                    myMessageSection.addFact("Difference: ", diffLen)
+                    for id in goneId:
+                        ticketLink = 'https://aais.zendesk.com/api/v2/tickets/{ticket_id}'.format(ticket_id=id)
+                        response = requests.get(ticketLink, auth=(user,pwd))
+                        ticketUrl = response.json()['ticket']['url']
+                        refineLink = ticketUrl.replace("/api/v2","").replace(".json","")
+                        tenantName = dbeaverGoneObj[id]
+                        myMessageSection.addFact("Links: ", refineLink)
+                        myMessageSection.addFact("Tenant Name: ", tenantName)
+                    myTeamsMessage.text("There are less tickets in the queue than last we checked!")
+                    myTeamsMessage.addSection(myMessageSection)
+                    myTeamsMessage.send()
+            ##check for ticket updates here
+                    checkPureUpdates(dbeaverObject)
+                    print("saved escalation tickets to dbeaver as ", tableName)
 
-        # Run this to check for ticket updates even when there are different number of tickets in the queue
-        def checkPureUpdates(stored):
-            listOfTicketId = []
-            for key in stored:
-                compareTickets = esc_ticket.query("id == @key")
-                listOfTicketId.append(compareTickets['id'].to_string(index=False))
-            sameTickets = esc_ticket.query("id in @listOfTicketId")
-            sameTickets['previous_update'] = sameTickets['id'].map(stored)
-            if sameTickets['previous_update'].equals(sameTickets['updated_at']):
-                print("No updates")
-                esc_ticket.to_sql(tableName, engine, index=False, if_exists='replace')
-                cursor.execute(queryToStore)
-                connection.close()
-
-            else:
-                print("There's some update")
-                ticketsToCheck = sameTickets.query("updated_at != previous_update")
-                for ticketToCheck in ticketsToCheck['id']:
-                    eachTicket = ticketsToCheck.query("id == @ticketToCheck")
-                    updatedTicketLink = eachTicket['url'].to_string(index=False)
-                    refineUpdatedTicketLink = updatedTicketLink.replace("/api/v2","").replace(".json","")
-                    updatedTicketId = eachTicket['id'].to_string(index=False)
-                    newUpdate = eachTicket['updated_at'].to_string(index=False)
-                    myMessageSection.addFact("Ticket ID: ", updatedTicketId)
-                    myMessageSection.addFact("Link: ", refineUpdatedTicketLink)
-                    myMessageSection.addFact("Updated at: ", newUpdate)
-                myTeamsMessageAddition.addSection(myMessageSection)
-                myTeamsMessageAddition.text("Additionally, some updates were detected on some tickets")
-                myTeamsMessageAddition.send()
-                esc_ticket.to_sql(tableName, engine, index=False, if_exists='replace')
-                cursor.execute(queryToStore)
-                connection.close()
-
-        if len(esc_ticket) == dbeaverLen:
-            print("Same number of tickets")
-            checkUpdatedDates(dbeaverObject)
-        
-        # If there are different number of tickets, then update
-        else:
-            print("Different number of tickets")
-            if len(esc_ticket) > dbeaverLen:
-                diffLen = len(esc_ticket) - dbeaverLen
-                listOfIds = []
-                for ticketId in dbeaverObject:
-                    listOfIds.append(ticketId)
-                missingTicket = esc_ticket.query("id not in @listOfIds")
-                myTeamsMessage.text("There are more tickets in the queue than last we checked!")
-                myMessageSection.addFact("Difference: ", diffLen)
-                for ticket in missingTicket['id']:
-                    url = missingTicket.query("id == @ticket")['url'].to_string(index=False).replace("/api/v2","").replace(".json","")
-                    myMessageSection.addFact("Links: ", url)
-                myTeamsMessage.addSection(myMessageSection)
-                myTeamsMessage.send()
-        
-        # check for ticket updates here
-                checkPureUpdates(dbeaverObject)
-                print("saved escalation tickets to dbeaver as ", tableName)
-            
-            if dbeaverLen > len(esc_ticket):
-                diffLen = dbeaverLen - len(esc_ticket)
-                listOfIdsInZd = []
-                listOfIdsInDb = []
-                for ticket in esc_ticket['id']:
-                    listOfIdsInZd.append(ticket)
-                for id in dbeaverObject:
-                    listOfIdsInDb.append(id)
-                goneId = list(set(listOfIdsInDb).difference(listOfIdsInZd))
-                print(goneId)
-                myMessageSection.addFact("Difference: ", diffLen)
-                for id in goneId:
-                    ticketLink = 'https://zendesk.com/api/v2/tickets/{ticket_id}'.format(ticket_id=id)
-                    response = requests.get(ticketLink, auth=(user,pwd))
-                    ticketUrl = response.json()['ticket']['url']
-                    refineLink = ticketUrl.replace("/api/v2","").replace(".json","")
-                    myMessageSection.addFact("Links: ", refineLink)
-                myTeamsMessage.text("There are less tickets in the queue than last we checked!")
-                myTeamsMessage.addSection(myMessageSection)
-                myTeamsMessage.send()
-        
-        # check for ticket updates here
-                checkPureUpdates(dbeaverObject)
-                print("saved escalation tickets to dbeaver as ", tableName)
+runBots()
